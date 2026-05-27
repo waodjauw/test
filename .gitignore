@@ -1,0 +1,4 @@
+# 忽略打包文件夹dist
+dist/
+# 忽略根目录下的 node_modules 文件夹
+node_modules/
