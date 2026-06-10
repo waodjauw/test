@@ -377,6 +377,18 @@ export const useTaskStore = defineStore('task', {
       this.activeNav = nav
     },
 
+    syncFromRoute(route) {
+      const p = route.path
+      if (p === '/') this.activeNav = 'all'
+      else if (p === '/today') this.activeNav = 'today'
+      else if (p === '/week') this.activeNav = 'week'
+      else if (p === '/overdue') this.activeNav = 'overdue'
+      else if (p === '/done') this.activeNav = 'done'
+      else if (p.startsWith('/priority/')) this.activeNav = 'p-' + route.params.priority
+      else if (p.startsWith('/category/')) this.activeNav = 'cat-' + route.params.id
+      else this.activeNav = 'all'
+    },
+
     applyTheme(theme) {
       this.settings.theme = theme
       document.documentElement.removeAttribute('data-theme')

@@ -1,69 +1,86 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+为本仓库中的 Claude Code 提供工作指引。
 
-## Commands
+## 命令
 
 ```bash
-npm run dev        # Vite dev server at http://localhost:5173/test/
-npm run build      # Production build to dist/
-npm run preview    # Preview built bundle
-npm run deploy     # Build + publish dist/ to GitHub Pages via gh-pages
+npm run dev        # Vite 开发服务器 → http://localhost:5173/test/
+npm run build      # 生产构建 → dist/
+npm run preview    # 预览构建产物
+npm run deploy     # 构建并发布 dist/ 到 GitHub Pages（gh-pages）
 ```
 
-There is no test runner, linter, or formatter configured.
+项目没有配置测试运行器、linter 或格式化工具。
 
-The Vite `base` is `/test/` (matches the GitHub Pages repo name). Don't change it without updating the deploy target.
+Vite 的 `base` 为 `/test/`（与 GitHub Pages 仓库名一致）。除非同时修改部署目标，否则不要改动此值。
 
-## Architecture
+## 架构
 
-TaskFlow Pro is a single-page Vue 3 + Pinia task manager. There is **no router** — view state lives in `store.activeNav` (values like `all`, `today`, `week`, `overdue`, `done`, `p-<priority>`, `cat-<id>`), and components react to it. State is persisted to `localStorage` under keys `taskflow_data_v3`, `taskflow_settings`, `taskflow_pin`.
+TaskFlow Pro 是一个 Vue 3 + Pinia 的单页任务管理器。使用 **Vue Router（Hash 模式）** 管理视图 URL——路由映射到 `store.activeNav`（取值如 `all`、`today`、`week`、`overdue`、`done`、`p-<priority>`、`cat-<id>`），组件通过 `store.filteredTasks` 响应视图变化。状态持久化到 `localStorage`，键名为 `taskflow_data_v3`、`taskflow_settings`、`taskflow_pin`。
 
-### Dual layout: desktop vs. mobile
+### 路由
 
-`App.vue` switches between two render trees based on `useDevice().isMobile`:
+定义在 `src/router/index.js`，7 条路由，使用 `createWebHashHistory`（兼容 GitHub Pages 静态部署）：
 
-- **Desktop tree** (≥1024px and tablet 768–1023px): `TopNav` + `Sidebar` + `ContentArea` inside `.app-wrapper` (1440px on desktop, full-width on tablet via `mobile.css`).
-- **Mobile tree** (<768px): `src/components/mobile/MobileLayout.vue` containing `MobileTopNav` (hamburger), `MobileDrawer` (slide-in sidebar), `MobileStatsRow` (horizontal scroll), `MobileToolbar` + `MobileFilterSheet` (bottom sheet), and `MobileTaskGrid` (single-column).
+| URL | activeNav |
+|---|---|
+| `/` | `all` |
+| `/today` | `today` |
+| `/week` | `week` |
+| `/overdue` | `overdue` |
+| `/done` | `done` |
+| `/priority/:priority` | `p-<priority>` |
+| `/category/:id` | `cat-<id>` |
 
-Modals, `LockScreen`, `ContextMenu`, and `ToastContainer` are **always mounted** alongside (outside the conditional), so they're shared between both trees. `TaskCard` is also shared — it adds a 500ms `touchstart` long-press to trigger `ContextMenu` on touch devices.
+**数据流为单向**：路由变化 → `App.vue` 中的 `watch(route.path)` → `store.syncFromRoute(route)` 设置 `activeNav` → `filteredTasks` getter 重新计算。导航点击通过 `router.push()` 触发，不直接调用 `store.setActiveNav()`。
 
-Tablet uses the desktop tree but `src/style/mobile.css` adjusts it via `@media (min-width: 768px) and (max-width: 1023px)`: sidebar shrinks to 200px, task grid → 2 columns, stats row → 3 columns, form rows stack.
+### 双布局：桌面端 vs 移动端
 
-### Breakpoints
+`App.vue` 根据 `useDevice().isMobile` 切换两套渲染树：
 
-Defined in `src/composables/useDevice.js` (module-level singleton with `matchMedia` listeners):
-- Mobile: `max-width: 767px`
-- Tablet: `768px–1023px`
-- Desktop: `≥1024px`
+- **桌面端树**（≥1024px 和平板 768–1023px）：`TopNav` + `Sidebar` + `ContentArea`，包裹在 `.app-wrapper` 中（桌面端 1440px 宽，平板通过 `mobile.css` 全宽显示）。
+- **移动端树**（<768px）：`src/components/mobile/MobileLayout.vue`，包含 `MobileTopNav`（汉堡菜单）、`MobileDrawer`（滑出侧栏）、`MobileStatsRow`（横向滚动）、`MobileToolbar` + `MobileFilterSheet`（底部弹出），以及 `MobileTaskGrid`（单列列表）。
 
-### State (`src/stores/taskStore.js`)
+模态框、`LockScreen`、`ContextMenu`、`ToastContainer` **始终挂载**在两套树之外，两端共用。`TaskCard` 也是共享的——内置 500ms `touchstart` 长按计时器，在触屏设备上触发 `ContextMenu`。
 
-Single Pinia store. Key getters: `filteredTasks` (applies `activeNav` + `filters.{search,cat,cycle,priority}` + sorting by overdue/done/priority), `stats`, `navBadges`, `categoryBadges`. Date helpers (`isToday`, `isThisWeek`, `isOverdue`, `formatDeadline`, `getPriorityLabel`, `getPriorityTagClass`) are exported from this file — reuse them instead of duplicating.
+平板沿用桌面端树，但 `src/style/mobile.css` 通过 `@media (min-width: 768px) and (max-width: 1023px)` 调整：侧栏缩至 200px，任务网格 → 2 列，统计行 → 3 列，表单行堆叠。
 
-`loadFromStorage()` is called from `App.vue` `onMounted`; `scheduleReminders` re-runs on `watch` of tasks/notification settings.
+### 断点
 
-### Composables
+定义在 `src/composables/useDevice.js`（模块级单例，`matchMedia` 监听器）：
+- 手机：`max-width: 767px`
+- 平板：`768px–1023px`
+- 桌面：`≥1024px`
 
-- `useDevice.js` — singleton reactive device flags. Import and call `useDevice()` anywhere.
-- `useReminders.js` — `scheduleReminders(tasks, settings)` clears and rebuilds `setTimeout` chain for in-window reminders (24h cap). Driven by `task.reminder` and `task.deadline - settings.remindAhead`.
-- `useToast.js` — `toastService.showToast(text, type)`. Used by reminders, store mutations, etc.
-- `useCountdown.js` — reactive countdown text/class for a deadline ref.
+### 状态管理（`src/stores/taskStore.js`）
 
-### Styles
+单一 Pinia store。核心 getter：`filteredTasks`（依次应用 `activeNav` + `filters.{search,cat,cycle,priority}` + 按逾期/完成/优先级排序）、`stats`、`navBadges`、`categoryBadges`。日期工具函数（`isToday`、`isThisWeek`、`isOverdue`、`formatDeadline`、`getPriorityLabel`、`getPriorityTagClass`）从此文件导出——直接复用，不要重复编写。
 
-Plain CSS, no preprocessor. Imported in this order in `main.js`: `variables.css` (color tokens / shadows), `base.css` (reset + `.app-wrapper`), `components.css` (all desktop component styles, ~600 lines), then `mobile.css` (must come last — contains tablet overrides and mobile-only `.m-*` classes plus `@media (hover: none)` rules that neutralize desktop hover states on touch).
+`loadFromStorage()` 在 `App.vue` 的 `onMounted` 中调用；`scheduleReminders` 通过 `watch` 监听 tasks 和通知设置的变化来重新调度。
 
-When adding a new visual element, prefer extending `components.css` and reusing `--accent`, `--bg-*`, `--text-*`, `--border-color`, `--shadow*`, `--radius`, `--transition` from `variables.css`.
+### 组合式函数
 
-### External integration
+- `useDevice.js` — 单例响应式设备标志。在任意位置导入并调用 `useDevice()`。
+- `useReminders.js` — `scheduleReminders(tasks, settings)` 清除并重建 `setTimeout` 链，用于窗口内提醒（上限 24h）。由 `task.reminder` 和 `task.deadline - settings.remindAhead` 驱动。
+- `useToast.js` — `toastService.showToast(text, type)`。被提醒、store 变更等使用。
+- `useCountdown.js` — 针对截止时间的响应式倒计时文本/样式类。
+- `useDebouncedRef.js` — 通用防抖 ref 工厂，返回 `{ local, debounced }`。
 
-Icons use `lucide-vue-next`. All form elements, buttons, dialogs, sheets are native HTML + custom CSS — no UI component library. Inter font is loaded from Google Fonts in `index.html`.
+### 样式
 
-### Recurring tasks
+纯 CSS，无预处理器。在 `main.js` 中按以下顺序引入：`variables.css`（颜色令牌/阴影）→ `base.css`（重置 + `.app-wrapper`）→ `components.css`（所有桌面端组件样式，约 600 行）→ `mobile.css`（必须最后引入——包含平板覆写、移动端专属 `.m-*` 类，以及 `@media (hover: none)` 规则用于消除触屏上的桌面端 hover 状态）。
 
-When a task with `cycle !== 'none'` is marked complete (via `toggleComplete` or `updateProgress(val=100)`), the store calls `advanceDeadline(dl, cycle)` to push `deadline` and `reminder` forward by one cycle (daily +1d / weekly +7d / monthly +1mo, preserving hour/minute), resets `progress` to 0, and the task is NOT marked done. Implemented in `src/stores/taskStore.js`.
+添加新视觉元素时，优先扩展 `components.css`，复用 `variables.css` 中的 `--accent`、`--bg-*`、`--text-*`、`--border-color`、`--shadow*`、`--radius`、`--transition`。
 
-### Search debouncing
+### 外部集成
 
-Both `Toolbar.vue` and `mobile/MobileToolbar.vue` use `useDebouncedRef(initial, 250)` from `src/composables/useDebouncedRef.js` to batch keystrokes before calling `store.setFilter('search', ...)`.
+图标使用 `lucide-vue-next`。所有表单元素、按钮、对话框、底部弹出均为原生 HTML + 自定义 CSS——不依赖任何 UI 组件库。Inter 字体通过 `index.html` 中的 Google Fonts 加载。
+
+### 循环任务
+
+当 `cycle !== 'none'` 的任务被标记完成时（通过 `toggleComplete` 或 `updateProgress(val=100)`），store 调用 `advanceDeadline(dl, cycle)` 将 `deadline` 和 `reminder` 向前推进一个周期（每日 +1d / 每周 +7d / 每月 +1mo，保留时分），`progress` 重置为 0，任务**不会**被标记为已完成。实现在 `src/stores/taskStore.js`。
+
+### 搜索防抖
+
+`Toolbar.vue` 和 `mobile/MobileToolbar.vue` 均使用 `src/composables/useDebouncedRef.js` 中的 `useDebouncedRef(initial, 250)` 来合并按键，延迟后调用 `store.setFilter('search', ...)`。

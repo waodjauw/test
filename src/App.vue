@@ -26,6 +26,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useTaskStore } from './stores/taskStore.js'
 import { scheduleReminders, clearAllReminders } from './composables/useReminders.js'
 import { toastService } from './composables/useToast.js'
@@ -43,6 +44,7 @@ import ProgressModal from './components/modals/ProgressModal.vue'
 import MobileLayout from './components/mobile/MobileLayout.vue'
 
 const store = useTaskStore()
+const route = useRoute()
 const { isMobile } = useDevice()
 const addOpen = ref(false)
 const editTaskId = ref(null)
@@ -78,6 +80,7 @@ function onGlobalClick() {
 onMounted(() => {
   store.loadFromStorage()
   store.applyTheme(store.settings.theme)
+  store.syncFromRoute(route)
   scheduleReminders(store.tasks, store.settings)
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onGlobalClick)
@@ -95,4 +98,8 @@ onUnmounted(() => {
 watch(() => [store.tasks, store.settings.notifEnabled, store.settings.remindAhead], () => {
   scheduleReminders(store.tasks, store.settings)
 }, { deep: true })
+
+watch(() => route.path, () => {
+  store.syncFromRoute(route)
+})
 </script>
